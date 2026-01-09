@@ -93,20 +93,30 @@ st.markdown("""
 """)
 
 # ---------------------------------------------------------
-# UI
+# UI - BLOCS VALEURS NUMÉRIQUES
 # ---------------------------------------------------------
 st.title("📡 Dashboard ESP32 — Température & Luminosité (MQTT Live)")
+
+st.markdown("## 📌 Valeurs actuelles")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.metric("🌡 Température (°C)", st.session_state.temperature)
+    st.metric(
+        label="🌡 Température",
+        value=f"{st.session_state.temperature:.1f} °C"
+    )
 
 with col2:
-    st.metric("💡 Luminosité (%)", st.session_state.luminosity)
+    st.metric(
+        label="💡 Luminosité",
+        value=f"{st.session_state.luminosity:.1f} %"
+    )
+
+st.divider()
 
 # ---------------------------------------------------------
-# Graphique Température
+# GRAPHIQUE TEMPÉRATURE
 # ---------------------------------------------------------
 st.subheader("📈 Température en temps réel")
 
@@ -118,9 +128,10 @@ else:
     st.info("En attente de données MQTT…")
 
 # ---------------------------------------------------------
-# Graphique Luminosité
+# GRAPHIQUE LUMINOSITÉ
 # ---------------------------------------------------------
 st.subheader("📈 Luminosité en temps réel")
+
 if len(df) > 1:
     st.line_chart(df["luminosity"])
 
