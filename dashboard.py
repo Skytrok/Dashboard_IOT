@@ -5,6 +5,14 @@ import pandas as pd
 import plotly.graph_objs as go
 
 # ---------------------------------------------------------
+# CONFIG PAGE (PLEINE LARGEUR)
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="Dashboard ESP32",
+    layout="wide"
+)
+
+# ---------------------------------------------------------
 # MQTT CONFIG
 # ---------------------------------------------------------
 BROKER = "51.103.121.129"
@@ -17,10 +25,10 @@ TOPIC_LUMI = "esp32/sensors/luminosity"
 # SESSION STATE
 # ---------------------------------------------------------
 if "temperature" not in st.session_state:
-    st.session_state.temperature = 0
+    st.session_state.temperature = 0.0
 
 if "luminosity" not in st.session_state:
-    st.session_state.luminosity = 0
+    st.session_state.luminosity = 0.0
 
 if "history" not in st.session_state:
     st.session_state.history = {
@@ -30,21 +38,21 @@ if "history" not in st.session_state:
     }
 
 # ---------------------------------------------------------
-# POLLING MQTT : Connexion courte compatible Streamlit Cloud
+# POLLING MQTT (compatible Streamlit Cloud)
 # ---------------------------------------------------------
 def poll_mqtt():
     client = mqtt.Client()
     received = {"temperature": None, "luminosity": None}
 
     def on_message(client, userdata, msg):
-        value = msg.payload.decode()
-        topic = msg.topic
-
-        if topic == TOPIC_TEMP:
-            received["temperature"] = float(value)
-
-        elif topic == TOPIC_LUMI:
-            received["luminosity"] = float(value)
+        try:
+            value = float(msg.payload.decode())
+            if msg.topic == TOPIC_TEMP:
+                received["temperature"] = value
+            elif msg.topic == TOPIC_LUMI:
+                received["luminosity"] = value
+        except:
+            pass
 
     client.on_message = on_message
 
@@ -53,14 +61,10 @@ def poll_mqtt():
         client.subscribe(TOPIC_TEMP)
         client.subscribe(TOPIC_LUMI)
         client.loop_start()
-
-        time.sleep(0.4)   # attendre les messages MQTT
-
+        time.sleep(0.4)
         client.loop_stop()
         client.disconnect()
-
-    except Exception as e:
-        print("MQTT ERROR:", e)
+    except:
         return None
 
     return received
@@ -93,21 +97,24 @@ st.markdown("""
 """)
 
 # ---------------------------------------------------------
-# UI - BLOCS VALEURS NUMÉRIQUES
+# DASHBOARD
 # ---------------------------------------------------------
 st.title("📡 Dashboard ESP32 — Température & Luminosité (MQTT Live)")
 
+# ---------------------------------------------------------
+# BLOCS VALEURS NUMÉRIQUES
+# ---------------------------------------------------------
 st.markdown("## 📌 Valeurs actuelles")
 
-col1, col2 = st.columns(2)
+val_col1, val_col2 = st.columns(2)
 
-with col1:
+with val_col1:
     st.metric(
         label="🌡 Température",
         value=f"{st.session_state.temperature:.1f} °C"
     )
 
-with col2:
+with val_col2:
     st.metric(
         label="💡 Luminosité",
         value=f"{st.session_state.luminosity:.1f} %"
@@ -116,24 +123,27 @@ with col2:
 st.divider()
 
 # ---------------------------------------------------------
-# GRAPHIQUE TEMPÉRATURE
+# GRAPHIQUES CÔTE À CÔTE
 # ---------------------------------------------------------
-st.subheader("📈 Température en temps réel")
+st.subheader("📈 Mesures en temps réel")
 
 df = pd.DataFrame(st.session_state.history)
 
-if len(df) > 1:
-    st.line_chart(df["temperature"])
-else:
-    st.info("En attente de données MQTT…")
+graph_col1, graph_col2 = st.columns(2)
 
-# ---------------------------------------------------------
-# GRAPHIQUE LUMINOSITÉ
-# ---------------------------------------------------------
-st.subheader("📈 Luminosité en temps réel")
+with graph_col1:
+    st.markdown("### 🌡 Température")
+    if len(df) > 1:
+        st.line_chart(df["temperature"])
+    else:
+        st.info("En attente de données MQTT…")
 
-if len(df) > 1:
-    st.line_chart(df["luminosity"])
+with graph_col2:
+    st.markdown("### 💡 Luminosité")
+    if len(df) > 1:
+        st.line_chart(df["luminosity"])
+    else:
+        st.info("En attente de données MQTT…")
 
 # ---------------------------------------------------------
 # AUTO-REFRESH
