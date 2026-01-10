@@ -2,7 +2,6 @@ import streamlit as st
 import paho.mqtt.client as mqtt
 import time
 import pandas as pd
-import plotly.graph_objs as go
 
 # ---------------------------------------------------------
 # CONFIG PAGE (PLEINE LARGEUR)
@@ -20,6 +19,7 @@ PORT = 1883
 
 TOPIC_TEMP = "esp32/sensors/temperature"
 TOPIC_LUMI = "esp32/sensors/luminosity"
+TOPIC_HUM  = "esp32/sensors/humidity"   # <<< AJOUT
 
 # ---------------------------------------------------------
 # SESSION STATE
@@ -30,11 +30,15 @@ if "temperature" not in st.session_state:
 if "luminosity" not in st.session_state:
     st.session_state.luminosity = 0.0
 
+if "humidity" not in st.session_state:   # <<< AJOUT
+    st.session_state.humidity = 0.0
+
 if "history" not in st.session_state:
     st.session_state.history = {
         "time": [],
         "temperature": [],
-        "luminosity": []
+        "luminosity": [],
+        "humidity": []                   # <<< AJOUT
     }
 
 # ---------------------------------------------------------
@@ -42,7 +46,11 @@ if "history" not in st.session_state:
 # ---------------------------------------------------------
 def poll_mqtt():
     client = mqtt.Client()
-    received = {"temperature": None, "luminosity": None}
+    received = {
+        "temperature": None,
+        "luminosity": None,
+        "humidity": None                # <<< AJOUT
+    }
 
     def on_message(client, userdata, msg):
         try:
@@ -51,6 +59,8 @@ def poll_mqtt():
                 received["temperature"] = value
             elif msg.topic == TOPIC_LUMI:
                 received["luminosity"] = value
+            elif msg.topic == TOPIC_HUM:
+                received["humidity"] = value
         except:
             pass
 
@@ -60,6 +70,7 @@ def poll_mqtt():
         client.connect(BROKER, PORT, 60)
         client.subscribe(TOPIC_TEMP)
         client.subscribe(TOPIC_LUMI)
+        client.subscribe(TOPIC_HUM)       # <<< AJOUT
         client.loop_start()
         time.sleep(0.4)
         client.loop_stop()
@@ -81,10 +92,14 @@ if msg:
     if msg["luminosity"] is not None:
         st.session_state.luminosity = msg["luminosity"]
 
+    if msg["humidity"] is not None:       # <<< AJOUT
+        st.session_state.humidity = msg["humidity"]
+
     t = time.strftime("%H:%M:%S")
     st.session_state.history["time"].append(t)
     st.session_state.history["temperature"].append(st.session_state.temperature)
     st.session_state.history["luminosity"].append(st.session_state.luminosity)
+    st.session_state.history["humidity"].append(st.session_state.humidity)
 
 # ---------------------------------------------------------
 # TITRE DU PROJET
@@ -99,14 +114,14 @@ st.markdown("""
 # ---------------------------------------------------------
 # DASHBOARD
 # ---------------------------------------------------------
-st.title("📡 Dashboard ESP32 — Température & Luminosité (MQTT Live)")
+st.title("📡 Dashboard ESP32 — Capteurs MQTT Live")
 
 # ---------------------------------------------------------
 # BLOCS VALEURS NUMÉRIQUES
 # ---------------------------------------------------------
 st.markdown("## 📌 Valeurs actuelles")
 
-val_col1, val_col2 = st.columns(2)
+val_col1, val_col2, val_col3 = st.columns(3)
 
 with val_col1:
     st.metric(
@@ -120,16 +135,22 @@ with val_col2:
         value=f"{st.session_state.luminosity:.1f} %"
     )
 
+with val_col3:
+    st.metric(
+        label="💧 Humidité",
+        value=f"{st.session_state.humidity:.1f} %"
+    )
+
 st.divider()
 
 # ---------------------------------------------------------
-# GRAPHIQUES CÔTE À CÔTE
+# GRAPHIQUES
 # ---------------------------------------------------------
 st.subheader("📈 Mesures en temps réel")
 
 df = pd.DataFrame(st.session_state.history)
 
-graph_col1, graph_col2 = st.columns(2)
+graph_col1, graph_col2, graph_col3 = st.columns(3)
 
 with graph_col1:
     st.markdown("### 🌡 Température")
@@ -142,6 +163,13 @@ with graph_col2:
     st.markdown("### 💡 Luminosité")
     if len(df) > 1:
         st.line_chart(df["luminosity"])
+    else:
+        st.info("En attente de données MQTT…")
+
+with graph_col3:
+    st.markdown("### 💧 Humidité")
+    if len(df) > 1:
+        st.line_chart(df["humidity"])
     else:
         st.info("En attente de données MQTT…")
 
