@@ -19,7 +19,7 @@ PORT = 1883
 
 TOPIC_TEMP = "esp32/sensors/temperature"
 TOPIC_LUMI = "esp32/sensors/luminosity"
-TOPIC_HUM  = "esp32/sensors/humidity"   # <<< AJOUT
+TOPIC_HUM  = "esp32/sensors/humidity"
 
 # ---------------------------------------------------------
 # SESSION STATE
@@ -30,7 +30,7 @@ if "temperature" not in st.session_state:
 if "luminosity" not in st.session_state:
     st.session_state.luminosity = 0.0
 
-if "humidity" not in st.session_state:   # <<< AJOUT
+if "humidity" not in st.session_state:
     st.session_state.humidity = 0.0
 
 if "history" not in st.session_state:
@@ -38,68 +38,47 @@ if "history" not in st.session_state:
         "time": [],
         "temperature": [],
         "luminosity": [],
-        "humidity": []                   # <<< AJOUT
+        "humidity": []
     }
 
 # ---------------------------------------------------------
-# POLLING MQTT (compatible Streamlit Cloud)
+# MQTT CLIENT PERSISTANT (LA CLÉ DU PROBLÈME)
 # ---------------------------------------------------------
-def poll_mqtt():
+if "mqtt_client" not in st.session_state:
+
     client = mqtt.Client()
-    received = {
-        "temperature": None,
-        "luminosity": None,
-        "humidity": None                # <<< AJOUT
-    }
 
     def on_message(client, userdata, msg):
         try:
             value = float(msg.payload.decode())
+
             if msg.topic == TOPIC_TEMP:
-                received["temperature"] = value
+                st.session_state.temperature = value
             elif msg.topic == TOPIC_LUMI:
-                received["luminosity"] = value
+                st.session_state.luminosity = value
             elif msg.topic == TOPIC_HUM:
-                received["humidity"] = value
+                st.session_state.humidity = value
+
+            t = time.strftime("%H:%M:%S")
+            st.session_state.history["time"].append(t)
+            st.session_state.history["temperature"].append(st.session_state.temperature)
+            st.session_state.history["luminosity"].append(st.session_state.luminosity)
+            st.session_state.history["humidity"].append(st.session_state.humidity)
+
         except:
             pass
 
     client.on_message = on_message
+    client.connect(BROKER, PORT, 60)
 
-    try:
-        client.connect(BROKER, PORT, 60)
-        client.subscribe(TOPIC_TEMP)
-        client.subscribe(TOPIC_LUMI)
-        client.subscribe(TOPIC_HUM)       # <<< AJOUT
-        client.loop_start()
-        time.sleep(0.4)
-        client.loop_stop()
-        client.disconnect()
-    except:
-        return None
+    client.subscribe([
+        (TOPIC_TEMP, 0),
+        (TOPIC_LUMI, 0),
+        (TOPIC_HUM, 0)
+    ])
 
-    return received
-
-# ---------------------------------------------------------
-# LECTURE MQTT
-# ---------------------------------------------------------
-msg = poll_mqtt()
-
-if msg:
-    if msg["temperature"] is not None:
-        st.session_state.temperature = msg["temperature"]
-
-    if msg["luminosity"] is not None:
-        st.session_state.luminosity = msg["luminosity"]
-
-    if msg["humidity"] is not None:       # <<< AJOUT
-        st.session_state.humidity = msg["humidity"]
-
-    t = time.strftime("%H:%M:%S")
-    st.session_state.history["time"].append(t)
-    st.session_state.history["temperature"].append(st.session_state.temperature)
-    st.session_state.history["luminosity"].append(st.session_state.luminosity)
-    st.session_state.history["humidity"].append(st.session_state.humidity)
+    client.loop_start()
+    st.session_state.mqtt_client = client
 
 # ---------------------------------------------------------
 # TITRE DU PROJET
@@ -124,22 +103,13 @@ st.markdown("## 📌 Valeurs actuelles")
 val_col1, val_col2, val_col3 = st.columns(3)
 
 with val_col1:
-    st.metric(
-        label="🌡 Température",
-        value=f"{st.session_state.temperature:.1f} °C"
-    )
+    st.metric("🌡 Température", f"{st.session_state.temperature:.1f} °C")
 
 with val_col2:
-    st.metric(
-        label="💡 Luminosité",
-        value=f"{st.session_state.luminosity:.1f} %"
-    )
+    st.metric("💡 Luminosité", f"{st.session_state.luminosity:.1f} %")
 
 with val_col3:
-    st.metric(
-        label="💧 Humidité",
-        value=f"{st.session_state.humidity:.1f} %"
-    )
+    st.metric("💧 Humidité", f"{st.session_state.humidity:.1f} %")
 
 st.divider()
 
@@ -174,7 +144,7 @@ with graph_col3:
         st.info("En attente de données MQTT…")
 
 # ---------------------------------------------------------
-# AUTO-REFRESH
+# AUTO-REFRESH (léger)
 # ---------------------------------------------------------
-time.sleep(1)
+time.sleep(5)
 st.rerun()
