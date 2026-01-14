@@ -22,7 +22,7 @@ TOPIC_LUMI = "esp32/sensors/luminosity"
 TOPIC_HUM  = "esp32/sensors/humidity"
 
 # ---------------------------------------------------------
-# SESSION STATE
+# SESSION STATE (INITIALISATION)
 # ---------------------------------------------------------
 if "temperature" not in st.session_state:
     st.session_state.temperature = 0.0
@@ -42,11 +42,9 @@ if "history" not in st.session_state:
     }
 
 # ---------------------------------------------------------
-# MQTT CLIENT PERSISTANT (LA CLÉ DU PROBLÈME)
+# MQTT CLIENT PERSISTANT (CORRECT STREAMLIT)
 # ---------------------------------------------------------
-if "mqtt_client" not in st.session_state:
-
-    client = mqtt.Client()
+if "mqtt_started" not in st.session_state:
 
     def on_message(client, userdata, msg):
         try:
@@ -59,6 +57,7 @@ if "mqtt_client" not in st.session_state:
             elif msg.topic == TOPIC_HUM:
                 st.session_state.humidity = value
 
+            # Historique
             t = time.strftime("%H:%M:%S")
             st.session_state.history["time"].append(t)
             st.session_state.history["temperature"].append(st.session_state.temperature)
@@ -68,6 +67,7 @@ if "mqtt_client" not in st.session_state:
         except:
             pass
 
+    client = mqtt.Client()
     client.on_message = on_message
     client.connect(BROKER, PORT, 60)
 
@@ -78,6 +78,8 @@ if "mqtt_client" not in st.session_state:
     ])
 
     client.loop_start()
+
+    st.session_state.mqtt_started = True
     st.session_state.mqtt_client = client
 
 # ---------------------------------------------------------
@@ -100,15 +102,15 @@ st.title("📡 Dashboard ESP32 — Capteurs MQTT Live")
 # ---------------------------------------------------------
 st.markdown("## 📌 Valeurs actuelles")
 
-val_col1, val_col2, val_col3 = st.columns(3)
+col1, col2, col3 = st.columns(3)
 
-with val_col1:
+with col1:
     st.metric("🌡 Température", f"{st.session_state.temperature:.1f} °C")
 
-with val_col2:
+with col2:
     st.metric("💡 Luminosité", f"{st.session_state.luminosity:.1f} %")
 
-with val_col3:
+with col3:
     st.metric("💧 Humidité", f"{st.session_state.humidity:.1f} %")
 
 st.divider()
@@ -120,32 +122,25 @@ st.subheader("📈 Mesures en temps réel")
 
 df = pd.DataFrame(st.session_state.history)
 
-graph_col1, graph_col2, graph_col3 = st.columns(3)
+g1, g2, g3 = st.columns(3)
 
-with graph_col1:
+with g1:
     st.markdown("### 🌡 Température")
     if len(df) > 1:
         st.line_chart(df["temperature"])
     else:
         st.info("En attente de données MQTT…")
 
-with graph_col2:
+with g2:
     st.markdown("### 💡 Luminosité")
     if len(df) > 1:
         st.line_chart(df["luminosity"])
     else:
         st.info("En attente de données MQTT…")
 
-with graph_col3:
+with g3:
     st.markdown("### 💧 Humidité")
     if len(df) > 1:
         st.line_chart(df["humidity"])
     else:
         st.info("En attente de données MQTT…")
-
-# ---------------------------------------------------------
-# AUTO-REFRESH (léger)
-# ---------------------------------------------------------
-time.sleep(1)
-st.rerun()
-
