@@ -1,111 +1,37 @@
 import streamlit as st
-import paho.mqtt.client as mqtt
-import time
+import requests
 import pandas as pd
+import time
 
 # ---------------------------------------------------------
-# CONFIG PAGE (PLEINE LARGEUR)
+# CONFIG PAGE
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Dashboard ESP32",
+    page_title="Dashboard ESP32 - Data -",
     layout="wide"
 )
 
 # ---------------------------------------------------------
-# MQTT CONFIG
+# FIREBASE URL (ADAPTÉ À TA BASE)
 # ---------------------------------------------------------
-BROKER = "51.103.121.129"
-PORT = 1883
-
-TOPIC_TEMP = "esp32/sensors/temperature"
-TOPIC_LUMI = "esp32/sensors/luminosity"
-TOPIC_HUM  = "esp32/sensors/humidity"
+FIREBASE_URL = (
+    "https://projet-final-9ef58-default-rtdb.europe-west1.firebasedatabase.app"
+    "/esp32/sensors.json"
+)
 
 # ---------------------------------------------------------
-# SESSION STATE
+# SESSION STATE (HISTORIQUE)
 # ---------------------------------------------------------
-if "temperature" not in st.session_state:
-    st.session_state.temperature = 0.0
-
-if "luminosity" not in st.session_state:
-    st.session_state.luminosity = 0.0
-
-if "humidity" not in st.session_state:
-    st.session_state.humidity = 0.0
-
 if "history" not in st.session_state:
     st.session_state.history = {
         "time": [],
         "temperature": [],
-        "luminosity": [],
-        "humidity": []
+        "humidity": [],
+        "luminosity": []
     }
 
 # ---------------------------------------------------------
-# POLLING MQTT (compatible Streamlit Cloud)
-# ---------------------------------------------------------
-def poll_mqtt():
-    client = mqtt.Client()
-    received = {
-        "temperature": None,
-        "luminosity": None,
-        "humidity": None
-    }
-
-    def on_message(client, userdata, msg):
-        try:
-            value = float(msg.payload.decode())
-
-            if msg.topic == TOPIC_TEMP:
-                received["temperature"] = value
-            elif msg.topic == TOPIC_LUMI:
-                received["luminosity"] = value
-            elif msg.topic == TOPIC_HUM:
-                received["humidity"] = value
-        except:
-            pass
-
-    client.on_message = on_message
-
-    try:
-        client.connect(BROKER, PORT, 60)
-        client.subscribe(TOPIC_TEMP)
-        client.subscribe(TOPIC_LUMI)
-        client.subscribe(TOPIC_HUM)
-
-        client.loop_start()
-        time.sleep(0.4)
-        client.loop_stop()
-        client.disconnect()
-
-    except:
-        return None
-
-    return received
-
-# ---------------------------------------------------------
-# LECTURE MQTT
-# ---------------------------------------------------------
-msg = poll_mqtt()
-
-if msg:
-    if msg["temperature"] is not None:
-        st.session_state.temperature = msg["temperature"]
-
-    if msg["luminosity"] is not None:
-        st.session_state.luminosity = msg["luminosity"]
-
-    if msg["humidity"] is not None:
-        st.session_state.humidity = msg["humidity"]
-
-    t = time.strftime("%H:%M:%S")
-    st.session_state.history["time"].append(t)
-    st.session_state.history["temperature"].append(st.session_state.temperature)
-    st.session_state.history["luminosity"].append(st.session_state.luminosity)
-    st.session_state.history["humidity"].append(st.session_state.humidity)
-
-# ---------------------------------------------------------
-# TITRE DU PROJET
+# TITRE
 # ---------------------------------------------------------
 st.markdown("""
 # **Projet Final**
@@ -114,70 +40,63 @@ st.markdown("""
 ---
 """)
 
-# ---------------------------------------------------------
-# DASHBOARD
-# ---------------------------------------------------------
-st.title("📡 Dashboard ESP32 — Capteurs MQTT Live")
+st.title("📡 Dashboard ESP32 — Données Firebase (Temps réel)")
 
 # ---------------------------------------------------------
-# BLOCS VALEURS NUMÉRIQUES
+# LECTURE FIREBASE (POLLING HTTP)
 # ---------------------------------------------------------
-st.markdown("## 📌 Valeurs actuelles")
+placeholder = st.empty()
 
-val_col1, val_col2, val_col3 = st.columns(3)
+while True:
+    try:
+        response = requests.get(FIREBASE_URL, timeout=5)
+        data = response.json()
 
-with val_col1:
-    st.metric(
-        label="🌡 Température",
-        value=f"{st.session_state.temperature:.1f} °C"
-    )
+        temperature = data.get("temperature", 0)
+        humidity = data.get("humidity", 0)
+        luminosity = data.get("luminosity", 0)
 
-with val_col2:
-    st.metric(
-        label="💡 Luminosité",
-        value=f"{st.session_state.luminosity:.1f} %"
-    )
+        # Historique
+        t = time.strftime("%H:%M:%S")
+        hist = st.session_state.history
+        hist["time"].append(t)
+        hist["temperature"].append(temperature)
+        hist["humidity"].append(humidity)
+        hist["luminosity"].append(luminosity)
 
-with val_col3:
-    st.metric(
-        label="💧 Humidité",
-        value=f"{st.session_state.humidity:.1f} %"
-    )
+        with placeholder.container():
 
-st.divider()
+            # -------------------------------
+            # BLOCS VALEURS
+            # -------------------------------
+            st.markdown("## 📌 Valeurs actuelles")
 
-# ---------------------------------------------------------
-# GRAPHIQUES
-# ---------------------------------------------------------
-st.subheader("📈 Mesures en temps réel")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🌡 Température", f"{temperature} °C")
+            c2.metric("💧 Humidité", f"{humidity} %")
+            c3.metric("💡 Luminosité", f"{luminosity} %")
 
-df = pd.DataFrame(st.session_state.history)
+            st.divider()
 
-graph_col1, graph_col2, graph_col3 = st.columns(3)
+            # -------------------------------
+            # GRAPHIQUES
+            # -------------------------------
+            st.subheader("📈 Évolution des mesures")
 
-with graph_col1:
-    st.markdown("### 🌡 Température")
-    if len(df) > 1:
-        st.line_chart(df["temperature"])
-    else:
-        st.info("En attente de données MQTT…")
+            df = pd.DataFrame(hist)
 
-with graph_col2:
-    st.markdown("### 💡 Luminosité")
-    if len(df) > 1:
-        st.line_chart(df["luminosity"])
-    else:
-        st.info("En attente de données MQTT…")
+            g1, g2, g3 = st.columns(3)
 
-with graph_col3:
-    st.markdown("### 💧 Humidité")
-    if len(df) > 1:
-        st.line_chart(df["humidity"])
-    else:
-        st.info("En attente de données MQTT…")
+            with g1:
+                st.line_chart(df["temperature"])
 
-# ---------------------------------------------------------
-# AUTO-REFRESH
-# ---------------------------------------------------------
-time.sleep(1)
-st.rerun()
+            with g2:
+                st.line_chart(df["humidity"])
+
+            with g3:
+                st.line_chart(df["luminosity"])
+
+    except Exception as e:
+        st.error("Erreur de connexion à Firebase")
+
+    time.sleep(1)
