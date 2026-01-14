@@ -1,19 +1,15 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 import paho.mqtt.client as mqtt
 import time
 import pandas as pd
 
 # ---------------------------------------------------------
-# CONFIG PAGE
+# CONFIG PAGE (PLEINE LARGEUR)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Dashboard ESP32",
     layout="wide"
 )
-
-# Rafraîchissement automatique de l’UI (toutes les 1 s)
-st_autorefresh(interval=1000, key="refresh")
 
 # ---------------------------------------------------------
 # MQTT CONFIG
@@ -46,45 +42,67 @@ if "history" not in st.session_state:
     }
 
 # ---------------------------------------------------------
-# MQTT CLIENT PERSISTANT (BONNE ARCHITECTURE)
+# POLLING MQTT (compatible Streamlit Cloud)
 # ---------------------------------------------------------
-if "mqtt_started" not in st.session_state:
+def poll_mqtt():
+    client = mqtt.Client()
+    received = {
+        "temperature": None,
+        "luminosity": None,
+        "humidity": None
+    }
 
     def on_message(client, userdata, msg):
         try:
             value = float(msg.payload.decode())
 
             if msg.topic == TOPIC_TEMP:
-                st.session_state.temperature = value
+                received["temperature"] = value
             elif msg.topic == TOPIC_LUMI:
-                st.session_state.luminosity = value
+                received["luminosity"] = value
             elif msg.topic == TOPIC_HUM:
-                st.session_state.humidity = value
-
-            # Historique
-            t = time.strftime("%H:%M:%S")
-            st.session_state.history["time"].append(t)
-            st.session_state.history["temperature"].append(st.session_state.temperature)
-            st.session_state.history["luminosity"].append(st.session_state.luminosity)
-            st.session_state.history["humidity"].append(st.session_state.humidity)
-
+                received["humidity"] = value
         except:
             pass
 
-    client = mqtt.Client()
     client.on_message = on_message
-    client.connect(BROKER, PORT, 60)
 
-    client.subscribe([
-        (TOPIC_TEMP, 0),
-        (TOPIC_LUMI, 0),
-        (TOPIC_HUM, 0)
-    ])
+    try:
+        client.connect(BROKER, PORT, 60)
+        client.subscribe(TOPIC_TEMP)
+        client.subscribe(TOPIC_LUMI)
+        client.subscribe(TOPIC_HUM)
 
-    client.loop_start()
+        client.loop_start()
+        time.sleep(0.4)
+        client.loop_stop()
+        client.disconnect()
 
-    st.session_state.mqtt_started = True
-    st.session_state.mqtt_client = client
+    except:
+        return None
+
+    return received
+
+# ---------------------------------------------------------
+# LECTURE MQTT
+# ---------------------------------------------------------
+msg = poll_mqtt()
+
+if msg:
+    if msg["temperature"] is not None:
+        st.session_state.temperature = msg["temperature"]
+
+    if msg["luminosity"] is not None:
+        st.session_state.luminosity = msg["luminosity"]
+
+    if msg["humidity"] is not None:
+        st.session_state.humidity = msg["humidity"]
+
+    t = time.strftime("%H:%M:%S")
+    st.session_state.history["time"].append(t)
+    st.session_state.history["temperature"].append(st.session_state.temperature)
+    st.session_state.history["luminosity"].append(st.session_state.luminosity)
+    st.session_state.history["humidity"].append(st.session_state.humidity)
 
 # ---------------------------------------------------------
 # TITRE DU PROJET
@@ -106,16 +124,25 @@ st.title("📡 Dashboard ESP32 — Capteurs MQTT Live")
 # ---------------------------------------------------------
 st.markdown("## 📌 Valeurs actuelles")
 
-col1, col2, col3 = st.columns(3)
+val_col1, val_col2, val_col3 = st.columns(3)
 
-with col1:
-    st.metric("🌡 Température", f"{st.session_state.temperature:.1f} °C")
+with val_col1:
+    st.metric(
+        label="🌡 Température",
+        value=f"{st.session_state.temperature:.1f} °C"
+    )
 
-with col2:
-    st.metric("💡 Luminosité", f"{st.session_state.luminosity:.1f} %")
+with val_col2:
+    st.metric(
+        label="💡 Luminosité",
+        value=f"{st.session_state.luminosity:.1f} %"
+    )
 
-with col3:
-    st.metric("💧 Humidité", f"{st.session_state.humidity:.1f} %")
+with val_col3:
+    st.metric(
+        label="💧 Humidité",
+        value=f"{st.session_state.humidity:.1f} %"
+    )
 
 st.divider()
 
@@ -126,25 +153,31 @@ st.subheader("📈 Mesures en temps réel")
 
 df = pd.DataFrame(st.session_state.history)
 
-g1, g2, g3 = st.columns(3)
+graph_col1, graph_col2, graph_col3 = st.columns(3)
 
-with g1:
+with graph_col1:
     st.markdown("### 🌡 Température")
     if len(df) > 1:
         st.line_chart(df["temperature"])
     else:
         st.info("En attente de données MQTT…")
 
-with g2:
+with graph_col2:
     st.markdown("### 💡 Luminosité")
     if len(df) > 1:
         st.line_chart(df["luminosity"])
     else:
         st.info("En attente de données MQTT…")
 
-with g3:
+with graph_col3:
     st.markdown("### 💧 Humidité")
     if len(df) > 1:
         st.line_chart(df["humidity"])
     else:
         st.info("En attente de données MQTT…")
+
+# ---------------------------------------------------------
+# AUTO-REFRESH
+# ---------------------------------------------------------
+time.sleep(1)
+st.rerun()
